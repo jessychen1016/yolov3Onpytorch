@@ -1,17 +1,19 @@
+#!/home/jessy104/miniconda3/envs/yolo3pytorch/bin/python3
 import argparse
 from sys import platform
-
+import rospy
+import cv_bridge
 from models import *  # set ONNX_EXPORT in models.py
 from utils.datasets import *
 from utils.utils import *
-import rospy
-import cv_bridge
+import sys
 
 
 def detect(save_txt=False, save_img=False):
     img_size = (320, 192) if ONNX_EXPORT else opt.img_size  # (320, 192) or (416, 256) or (608, 352) for (height, width)
     out, source, weights, half, view_img = opt.output, opt.source, opt.weights, opt.half, opt.view_img
     webcam = source == '0' or source.startswith('rtsp') or source.startswith('http') or source.endswith('.txt')
+    rosFlag = source == '1' or source.startswith('/')
 
     # Initialize
     device = torch_utils.select_device(device='cpu' if ONNX_EXPORT else opt.device)
@@ -64,10 +66,16 @@ def detect(save_txt=False, save_img=False):
     if webcam:
         view_img = True
         torch.backends.cudnn.benchmark = True  # set True to speed up constant image size inference
-        dataset = LoadStreams(source, img_size=img_size, half=half)
+        dataset = LoadStreams(path=source, img_size=img_size, half=half)
+    elif rosFlag:
+        view_img = True
+        torch.backends.cudnn.benchmark = True  # set True to speed up constant image size inference
+        dataset = LoadRosTopic(path=source, img_size=img_size, half=half)
     else:
         save_img = True
-        dataset = LoadImages(source, img_size=img_size, half=half)
+        dataset = LoadImages(path=source, img_size=img_size, half=half)
+
+    
 
     # Get classes and colors
     classes = load_classes(parse_data_cfg(opt.data)['names'])
@@ -152,12 +160,36 @@ def detect(save_txt=False, save_img=False):
     print('Done. (%.3fs)' % (time.time() - t0))
 
 
+
+def image_msg_to_cv2(img_msg):
+    """ cv_bridge does not support python3 and this is extracted from the
+        cv_bridge file to convert the msg::Img to np.ndarray
+    """
+    if 'C' in img_msg.encoding:
+        map_dtype = {'U': 'uint', 'S': 'int', 'F': 'float'}
+        dtype_str, n_channels_str = img_msg.encoding.split('C')
+        n_channels = int(n_channels_str)
+        dtype = np.dtype(map_dtype[dtype_str[-1]] + dtype_str[:-1])
+    elif img_msg.encoding == 'bgr8':
+        n_channels = 3
+        dtype = np.dtype('uint8')
+    dtype = dtype.newbyteorder('>' if img_msg.is_bigendian else '<')
+    im = np.ndarray(shape=(img_msg.height, img_msg.width, n_channels),
+                    dtype=dtype, buffer=img_msg.data)
+    im = np.squeeze(im)
+    if img_msg.is_bigendian == (sys.byteorder == 'little'):
+        im = im.byteswap().newbyteorder()
+    return im
+
+
+
 if __name__ == '__main__':
+    rospy.init_node('Detecter', anonymous=True)
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', type=str, default='cfg/yolov3.cfg', help='cfg file path')
     parser.add_argument('--data', type=str, default='data/coco.data', help='coco.data file path')
     parser.add_argument('--weights', type=str, default='weights/colorDown/1209best.pt', help='path to weights file')
-    parser.add_argument('--source', type=str, default='data/samples/try/ColorFront', help='source')  # input file/folder, 0 for webcam
+    parser.add_argument('--source', type=str, default='1', help='source')  # input file/folder, 0 for webcam
     parser.add_argument('--output', type=str, default='output/try', help='output folder')  # output folder
     parser.add_argument('--img-size', type=int, default=416, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.6, help='object confidence threshold')
@@ -171,3 +203,4 @@ if __name__ == '__main__':
 
     with torch.no_grad():
         detect()
+    rospy.spin()

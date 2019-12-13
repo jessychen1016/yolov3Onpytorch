@@ -4,8 +4,10 @@ import os
 import random
 import shutil
 import time
+import sys
 from pathlib import Path
 from threading import Thread
+from std_msgs.msg import String
 
 import cv2
 import numpy as np
@@ -14,7 +16,13 @@ from PIL import Image, ExifTags
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
+
 from utils.utils import xyxy2xywh, xywh2xyxy
+
+
+import rospy
+from std_msgs.msg import String
+from sensor_msgs.msg import Image
 
 img_formats = ['.bmp', '.jpg', '.jpeg', '.png', '.tif', '.dng']
 vid_formats = ['.mov', '.avi', '.mp4']
@@ -106,7 +114,7 @@ class LoadImages:  # for inference
         img = np.ascontiguousarray(img, dtype=np.float16 if self.half else np.float32)  # uint8 to fp16/fp32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
 
-        # cv2.imwrite(path + '.letterbox.jpg', 255 * img.transpose((1, 2, 0))[:, :, ::-1])  # save letterbox image
+
         return path, img, img0, self.cap
 
     def new_video(self, path):
@@ -117,6 +125,65 @@ class LoadImages:  # for inference
     def __len__(self):
         return self.nF  # number of files
 
+
+class LoadRosTopic:  # for inference
+    def __init__(self, path, img_size=416, half=False):
+        self.path = str(Path(path))
+
+        self.img_size = img_size
+        self.mode = 'images'
+        self.half = half  # half precision fp16 images
+
+    def __iter__(self):
+        self.count = 0
+        return self
+
+    def cv_bridge(self, img_msg):
+        """ cv_bridge does not support python3 and this is extracted from the
+            cv_bridge file to convert the msg::Img to np.ndarray
+        """
+        print("FFFFFFFFFFFFFFFFFFFFFFFFF")
+        if 'C' in img_msg.encoding:
+            map_dtype = {'U': 'uint', 'S': 'int', 'F': 'float'}
+            dtype_str, n_channels_str = img_msg.encoding.split('C')
+            n_channels = int(n_channels_str)
+            dtype = np.dtype(map_dtype[dtype_str[-1]] + dtype_str[:-1])
+        elif img_msg.encoding == 'bgr8':
+            n_channels = 3
+            dtype = np.dtype('uint8')
+        dtype = dtype.newbyteorder('>' if img_msg.is_bigendian else '<')
+        self.img0 = np.ndarray(shape=(img_msg.height, img_msg.width, n_channels),
+                        dtype=dtype, buffer=img_msg.data)
+        self.img0 = np.squeeze(self.img0)
+        if img_msg.is_bigendian == (sys.byteorder == 'little'):
+            self.img0 = self.img0.byteswap().newbyteorder()
+        print("IMAGE=====", self.img0)
+        return self.img0       
+
+    def __next__(self):
+        if cv2.waitKey(1) == ord('q'):  # q to quit
+            cv2.destroyAllWindows()
+            raise StopIteration
+
+        else:
+            # Read image
+            self.count += 1
+
+            rospy.Subscriber("/mynteye/left/image_color", Image, self.cv_bridge)  # BGR
+        from time import sleep 
+        sleep( 2)
+        # Padded resize
+        img = letterbox(self.img0, new_shape=self.img_size)[0]
+
+        # Normalize RGB
+        img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB
+        img = np.ascontiguousarray(img, dtype=np.float16 if self.half else np.float32)  # uint8 to fp16/fp32
+        img /= 255.0  # 0 - 255 to 0.0 - 1.0
+
+        return self.path, img, self.img0, None
+
+    def __len__(self):
+        return 1  # number of files
 
 class LoadWebcam:  # for inference
     def __init__(self, pipe=0, img_size=416, half=False):
@@ -185,6 +252,7 @@ class LoadWebcam:  # for inference
         return 0
 
 
+
 class LoadStreams:  # multiple IP or RTSP cameras
     def __init__(self, sources='streams.txt', img_size=416, half=False):
         self.mode = 'images'
@@ -194,6 +262,77 @@ class LoadStreams:  # multiple IP or RTSP cameras
         if os.path.isfile(sources):
             with open(sources, 'r') as f:
                 sources = [x.strip() for x in f.read().splitlines() if len(x.strip())]
+        else:
+            sources = [sources]
+
+        n = len(sources)
+        self.imgs = [None] * n
+        self.sources = sources
+        for i, s in enumerate(sources):
+            # Start the thread to read frames from the video stream
+            print('%g/%g: %s... ' % (i + 1, n, s), end='')
+            cap = cv2.VideoCapture(0 if s == '0' else s)
+            assert cap.isOpened(), 'Failed to open %s' % s
+            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            fps = cap.get(cv2.CAP_PROP_FPS) % 100
+            _, self.imgs[i] = cap.read()  # guarantee first frame
+            thread = Thread(target=self.update, args=([i, cap]), daemon=True)
+            print(' success (%gx%g at %.2f FPS).' % (w, h, fps))
+            thread.start()
+        print('')  # newline
+
+    def update(self, index, cap):
+        # Read next stream frame in a daemon thread
+        n = 0
+        while cap.isOpened():
+            n += 1
+            # _, self.imgs[index] = cap.read()
+            cap.grab()
+            if n == 4:  # read every 4th frame
+                _, self.imgs[index] = cap.retrieve()
+                n = 0
+            time.sleep(0.01)  # wait time
+
+    def __iter__(self):
+        self.count = -1
+        return self
+
+    def __next__(self):
+        self.count += 1
+        img0 = self.imgs.copy()
+        if cv2.waitKey(1) == ord('q'):  # q to quit
+            cv2.destroyAllWindows()
+            raise StopIteration
+
+        # Letterbox
+        img = [letterbox(x, new_shape=self.img_size, interp=cv2.INTER_LINEAR)[0] for x in img0]
+
+        # Stack
+        img = np.stack(img, 0)
+
+        # Normalize RGB
+        img = img[:, :, :, ::-1].transpose(0, 3, 1, 2)  # BGR to RGB
+        img = np.ascontiguousarray(img, dtype=np.float16 if self.half else np.float32)  # uint8 to fp16/fp32
+        img /= 255.0  # 0 - 255 to 0.0 - 1.0
+
+        return self.sources, img, img0, None
+
+    def __len__(self):
+        return 0  # 1E12 frames = 32 streams at 30 FPS for 30 years
+
+
+
+
+    def __init__(self, sources='streams.txt', img_size=416, half=False):
+        self.mode = 'images'
+        self.img_size = img_size
+        self.half = half  # half precision fp16 images
+
+        if os.path.isfile(sources):
+            with open(sources, 'r') as f:
+                sources = [x.strip() for x in f.read().splitlines() if len(x.strip())]
+            print("OPOPOPOPOPOPOPOPOPOPOPOPPPPPPPs")
         else:
             sources = [sources]
 
