@@ -4,6 +4,8 @@ from sys import platform
 from models import *  # set ONNX_EXPORT in models.py
 from utils.datasets import *
 from utils.utils import *
+import rospy
+import cv_bridge
 
 
 def detect(save_txt=False, save_img=False):
@@ -154,11 +156,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', type=str, default='cfg/yolov3.cfg', help='cfg file path')
     parser.add_argument('--data', type=str, default='data/coco.data', help='coco.data file path')
-    parser.add_argument('--weights', type=str, default='weights/best.pt', help='path to weights file')
-    parser.add_argument('--source', type=str, default='coco/images/Infra1Front', help='source')  # input file/folder, 0 for webcam
+    parser.add_argument('--weights', type=str, default='weights/colorDown/1209best.pt', help='path to weights file')
+    parser.add_argument('--source', type=str, default='data/samples/try/ColorFront', help='source')  # input file/folder, 0 for webcam
     parser.add_argument('--output', type=str, default='output/try', help='output folder')  # output folder
     parser.add_argument('--img-size', type=int, default=416, help='inference size (pixels)')
-    parser.add_argument('--conf-thres', type=float, default=0.3, help='object confidence threshold')
+    parser.add_argument('--conf-thres', type=float, default=0.6, help='object confidence threshold')
     parser.add_argument('--nms-thres', type=float, default=0.5, help='iou threshold for non-maximum suppression')
     parser.add_argument('--fourcc', type=str, default='mp4v', help='output video codec (verify ffmpeg support)')
     parser.add_argument('--half', action='store_true', help='half precision FP16 inference')

@@ -22,9 +22,9 @@ def convert(size, box):
  
 def convert_annotation(image_id):
     print("2-open annotations")
-    in_file = open('/home/jessy104/around_the_garden_front1/annotationXML/%s.xml'%(image_id))
+    in_file = open('/media/jessy104/Drone/label/ColorDownLabel/%s.xml'%(image_id))
     print("3-convert to txt")
-    out_file = open('/home/jessy104/around_the_garden_front1/annotationTXT/%s.txt'%(image_id), 'w')
+    out_file = open('/media/jessy104/Drone/label/ColorDownLabelTXT/%s.txt'%(image_id), 'w')
     tree=ET.parse(in_file)
     root = tree.getroot()
     size = root.find('size')
@@ -44,17 +44,17 @@ def convert_annotation(image_id):
 def generate_image_list(image_id):
     print("Generating Image List")
     # out_file = open('/home/jessy104/around_the_garden_front1/annotationTXT/%s.txt'%(image_id), 'w')
-    out_file = open('/home/jessy104/around_the_garden_front1/image_list.txt', 'a')
-    out_file.write('../coco/images/Infra1Front/' + image_id + '.png' + '\n')
+    out_file = open('/media/jessy104/Drone/label/ColorDownImgPath/image_list.txt', 'a')
+    out_file.write('./coco/images/ColorDown/' + image_id + '.png' + '\n')
     print("write ok")
 def generate_shape(image_id):
     print("Generating Image List")
     # out_file = open('/home/jessy104/around_the_garden_front1/annotationTXT/%s.txt'%(image_id), 'w')
-    out_file = open('/home/jessy104/around_the_garden_front1/image_list.shapes', 'a')
-    out_file.write('640 480' + '\n')
+    out_file = open('/media/jessy104/Drone/label/ColorDownImgPath/image_list.shapes', 'a')
+    out_file.write('1920 1080' + '\n')
     print("write ok")
 #wd = getcwd()
-directory = "/home/jessy104/around_the_garden_front1/annotationXML/"
+directory = "/media/jessy104/Drone/label/ColorDownLabel/"
  
 # for year, image_set in sets:
 #     if not os.path.exists('COCO_%s/labels/'%(year)):

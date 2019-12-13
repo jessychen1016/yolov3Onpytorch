@@ -11,8 +11,8 @@ from utils.datasets import *
 from utils.utils import *
 from tensorboardX import SummaryWriter
 
-tb_writer = SummaryWriter(log_dir="./log")
-
+global tb_writer
+tb_writer = SummaryWriter()
 mixed_precision = True
 try:  # Mixed precision training https://github.com/NVIDIA/apex
     from apex import amp
@@ -31,7 +31,7 @@ hyp = {'giou': 3.31,  # giou loss gain
        'obj': 52.0,  # obj loss gain (*=img_size/416 if img_size != 416)
        'obj_pw': 1.0,  # obj BCELoss positive_weight
        'iou_t': 0.213,  # iou training threshold
-       'lr0': 0.000261,  # initial learning rate (SGD=1E-3, Adam=9E-5) default 0.00261
+       'lr0': 0.00261,  # initial learning rate (SGD=1E-3, Adam=9E-5) default 0.00261
        'lrf': -4.,  # final LambdaLR learning rate = lr0 * (10 ** lrf)
        'momentum': 0.949,  # SGD momentum
        'weight_decay': 0.000489,  # optimizer weight decay
@@ -336,6 +336,7 @@ def train():
             titles = ['GIoU', 'Objectness', 'Classification', 'Train loss',
                       'Precision', 'Recall', 'mAP', 'F1', 'val GIoU', 'val Objectness', 'val Classification']
             for xi, title in zip(x, titles):
+                print("X      ====    ", x, "       title===== ", title)
                 tb_writer.add_scalar(title, xi, epoch)
 
         # Update best mAP
@@ -422,7 +423,7 @@ if __name__ == '__main__':
     parser.add_argument('--bucket', type=str, default='', help='gsutil bucket')
     parser.add_argument('--img-weights', action='store_true', help='select training images by weight')
     parser.add_argument('--cache-images', action='store_true', help='cache images for faster training')
-    parser.add_argument('--weights', type=str, default='weights/last.pt', help='initial weights')
+    parser.add_argument('--weights', type=str, default='weights/yolov3.weights', help='initial weights')
     parser.add_argument('--arc', type=str, default='default', help='yolo architecture')  # defaultpw, uCE, uBCE
     parser.add_argument('--prebias', action='store_true', help='transfer-learn yolo biases prior to training')
     parser.add_argument('--name', default='', help='renames results.txt to results_name.txt if supplied')
