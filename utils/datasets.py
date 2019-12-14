@@ -133,10 +133,10 @@ class LoadRosTopic:  # for inference
         self.img_size = img_size
         self.mode = 'images'
         self.half = half  # half precision fp16 images
-        self.count = 0 #if this is the first time calling this class, then wait for 2secs for each call to let the rostopic in
+        self.rcount = 0 #if this is the first time calling this class, then wait for 2secs for each call to let the rostopic in
 
     def __iter__(self):
-        # self.count = 0
+        self.count = -1
         return self
 
     def cv_bridge(self, img_msg):
@@ -157,23 +157,21 @@ class LoadRosTopic:  # for inference
         self.img0 = np.squeeze(self.img0)
         if img_msg.is_bigendian == (sys.byteorder == 'little'):
             self.img0 = self.img0.byteswap().newbyteorder()
-        print("IMAGE=====", self.img0)
         return self.img0       
 
     def __next__(self):
+        self.count += 1
         if cv2.waitKey(1) == ord('q'):  # q to quit
             cv2.destroyAllWindows()
             raise StopIteration
 
-        else:
-            # Read image
-            # self.count += 1
+        
+        rospy.Subscriber("/mynteye/left/image_color", Image, self.cv_bridge)  # BGR
 
-            rospy.Subscriber("/mynteye/left/image_color", Image, self.cv_bridge, queue_size=1 buff_size=0)  # BGR
-        if self.count <= 1:
+        if self.rcount <= 1:
             from time import sleep 
-            sleep(2)
-            self.count +=1
+            sleep(1)
+            self.rcount +=1
         # Padded resize
         img = letterbox(self.img0, new_shape=self.img_size)[0]
 
@@ -185,7 +183,7 @@ class LoadRosTopic:  # for inference
         return self.path, img, self.img0, None
 
     def __len__(self):
-        return 1  # number of files
+        return 0  # number of files
 
 class LoadWebcam:  # for inference
     def __init__(self, pipe=0, img_size=416, half=False):
@@ -323,76 +321,6 @@ class LoadStreams:  # multiple IP or RTSP cameras
     def __len__(self):
         return 0  # 1E12 frames = 32 streams at 30 FPS for 30 years
 
-
-
-
-    def __init__(self, sources='streams.txt', img_size=416, half=False):
-        self.mode = 'images'
-        self.img_size = img_size
-        self.half = half  # half precision fp16 images
-
-        if os.path.isfile(sources):
-            with open(sources, 'r') as f:
-                sources = [x.strip() for x in f.read().splitlines() if len(x.strip())]
-            print("OPOPOPOPOPOPOPOPOPOPOPOPPPPPPPs")
-        else:
-            sources = [sources]
-
-        n = len(sources)
-        self.imgs = [None] * n
-        self.sources = sources
-        for i, s in enumerate(sources):
-            # Start the thread to read frames from the video stream
-            print('%g/%g: %s... ' % (i + 1, n, s), end='')
-            cap = cv2.VideoCapture(0 if s == '0' else s)
-            assert cap.isOpened(), 'Failed to open %s' % s
-            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            fps = cap.get(cv2.CAP_PROP_FPS) % 100
-            _, self.imgs[i] = cap.read()  # guarantee first frame
-            thread = Thread(target=self.update, args=([i, cap]), daemon=True)
-            print(' success (%gx%g at %.2f FPS).' % (w, h, fps))
-            thread.start()
-        print('')  # newline
-
-    def update(self, index, cap):
-        # Read next stream frame in a daemon thread
-        n = 0
-        while cap.isOpened():
-            n += 1
-            # _, self.imgs[index] = cap.read()
-            cap.grab()
-            if n == 4:  # read every 4th frame
-                _, self.imgs[index] = cap.retrieve()
-                n = 0
-            time.sleep(0.01)  # wait time
-
-    def __iter__(self):
-        self.count = -1
-        return self
-
-    def __next__(self):
-        self.count += 1
-        img0 = self.imgs.copy()
-        if cv2.waitKey(1) == ord('q'):  # q to quit
-            cv2.destroyAllWindows()
-            raise StopIteration
-
-        # Letterbox
-        img = [letterbox(x, new_shape=self.img_size, interp=cv2.INTER_LINEAR)[0] for x in img0]
-
-        # Stack
-        img = np.stack(img, 0)
-
-        # Normalize RGB
-        img = img[:, :, :, ::-1].transpose(0, 3, 1, 2)  # BGR to RGB
-        img = np.ascontiguousarray(img, dtype=np.float16 if self.half else np.float32)  # uint8 to fp16/fp32
-        img /= 255.0  # 0 - 255 to 0.0 - 1.0
-
-        return self.sources, img, img0, None
-
-    def __len__(self):
-        return 0  # 1E12 frames = 32 streams at 30 FPS for 30 years
 
 
 class LoadImagesAndLabels(Dataset):  # for training/testing
