@@ -133,16 +133,16 @@ class LoadRosTopic:  # for inference
         self.img_size = img_size
         self.mode = 'images'
         self.half = half  # half precision fp16 images
+        self.count = 0 #if this is the first time calling this class, then wait for 2secs for each call to let the rostopic in
 
     def __iter__(self):
-        self.count = 0
+        # self.count = 0
         return self
 
     def cv_bridge(self, img_msg):
         """ cv_bridge does not support python3 and this is extracted from the
             cv_bridge file to convert the msg::Img to np.ndarray
         """
-        print("FFFFFFFFFFFFFFFFFFFFFFFFF")
         if 'C' in img_msg.encoding:
             map_dtype = {'U': 'uint', 'S': 'int', 'F': 'float'}
             dtype_str, n_channels_str = img_msg.encoding.split('C')
@@ -167,11 +167,13 @@ class LoadRosTopic:  # for inference
 
         else:
             # Read image
-            self.count += 1
+            # self.count += 1
 
-            rospy.Subscriber("/mynteye/left/image_color", Image, self.cv_bridge)  # BGR
-        from time import sleep 
-        sleep( 2)
+            rospy.Subscriber("/mynteye/left/image_color", Image, self.cv_bridge, queue_size=1 buff_size=0)  # BGR
+        if self.count <= 1:
+            from time import sleep 
+            sleep(2)
+            self.count +=1
         # Padded resize
         img = letterbox(self.img0, new_shape=self.img_size)[0]
 
