@@ -143,20 +143,29 @@ class LoadRosTopic:  # for inference
         """ cv_bridge does not support python3 and this is extracted from the
             cv_bridge file to convert the msg::Img to np.ndarray
         """
+        #set different dtype based on different encoding type
         if 'C' in img_msg.encoding:
             map_dtype = {'U': 'uint', 'S': 'int', 'F': 'float'}
             dtype_str, n_channels_str = img_msg.encoding.split('C')
             n_channels = int(n_channels_str)
             dtype = np.dtype(map_dtype[dtype_str[-1]] + dtype_str[:-1])
-        elif img_msg.encoding == 'bgr8':
+        elif img_msg.encoding == 'bgr8' or img_msg.encoding == 'rgb8':
             n_channels = 3
             dtype = np.dtype('uint8')
+
+            
         dtype = dtype.newbyteorder('>' if img_msg.is_bigendian else '<')
-        self.img0 = np.ndarray(shape=(img_msg.height, img_msg.width, n_channels),
+        img1 = np.ndarray(shape=(img_msg.height, img_msg.width, n_channels),
                         dtype=dtype, buffer=img_msg.data)
-        self.img0 = np.squeeze(self.img0)
+        img1 = np.squeeze(img1)
         if img_msg.is_bigendian == (sys.byteorder == 'little'):
-            self.img0 = self.img0.byteswap().newbyteorder()
+            img1 = img1.byteswap().newbyteorder()
+
+        #convert RGB to BGR
+        if img_msg.encoding == 'rgb8':
+            self.img0 = cv2.cvtColor(img1, cv2.COLOR_RGB2BGR)
+        else:
+            self.img0 = img1
         return self.img0       
 
     def __next__(self):
@@ -166,7 +175,7 @@ class LoadRosTopic:  # for inference
             raise StopIteration
 
         
-        rospy.Subscriber("/mynteye/left/image_color", Image, self.cv_bridge)  # BGR
+        rospy.Subscriber("/AeroCameraDown/color/image_raw", Image, self.cv_bridge)  # BGR
 
         if self.rcount <= 1:
             from time import sleep 
