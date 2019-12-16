@@ -11,7 +11,7 @@ import sys
 
 def detect(save_txt=False, save_img=False):
     img_size = (320, 192) if ONNX_EXPORT else opt.img_size  # (320, 192) or (416, 256) or (608, 352) for (height, width)
-    out, source, weights, half, view_img = opt.output, opt.source, opt.weights, opt.half, opt.view_img
+    out, source, rostopic, weights, half, view_img = opt.output, opt.source, opt.rostopic, opt.weights, opt.half, opt.view_img
     webcam = source == '0' or source.startswith('rtsp') or source.startswith('http') or source.endswith('.txt')
     rosFlag = source == '1' or source.startswith('/')
 
@@ -66,11 +66,11 @@ def detect(save_txt=False, save_img=False):
     if webcam:
         view_img = True
         torch.backends.cudnn.benchmark = True  # set True to speed up constant image size inference
-        dataset = LoadStreams(path=source, img_size=img_size, half=half)
+        dataset = LoadStreams(sources=source, img_size=img_size, half=half)
     elif rosFlag:
         view_img = True
         torch.backends.cudnn.benchmark = True  # set True to speed up constant image size inference
-        dataset = LoadRosTopic(path=source, img_size=img_size, half=half)
+        dataset = LoadRosTopic(path=source, img_size=img_size, half=half, rostopic=rostopic)
     else:
         save_img = True
         dataset = LoadImages(path=source, img_size=img_size, half=half)
@@ -186,12 +186,13 @@ def image_msg_to_cv2(img_msg):
 if __name__ == '__main__':
     rospy.init_node('Detecter', anonymous=True)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='cfg/yolov3.cfg', help='cfg file path')
-    parser.add_argument('--data', type=str, default='data/coco.data', help='coco.data file path')
-    parser.add_argument('--weights', type=str, default='weights/colorDown/1209best.pt', help='path to weights file')
-    parser.add_argument('--source', type=str, default='1', help='source')  # input file/folder, 0 for webcam
+    parser.add_argument('--cfg', type=str, default='cfg/yolov3_80.cfg', help='cfg file path')
+    parser.add_argument('--data', type=str, default='data/coco80.data', help='coco.data file path')
+    parser.add_argument('--weights', type=str, default='weights/infraFront/1204best.pt', help='path to weights file')
+    parser.add_argument('--source', type=str, default='1', help='source')  # input file/folder, 0 for webcam, 1 for rostopic
+    parser.add_argument('--rostopic', type=str, default='/AeroCameraFront/infra1/image_rect_raw', help='source')
     parser.add_argument('--output', type=str, default='output/try', help='output folder')  # output folder
-    parser.add_argument('--img-size', type=int, default=416, help='inference size (pixels)')
+    parser.add_argument('--img-size', type=int, default=1280, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.6, help='object confidence threshold')
     parser.add_argument('--nms-thres', type=float, default=0.5, help='iou threshold for non-maximum suppression')
     parser.add_argument('--fourcc', type=str, default='mp4v', help='output video codec (verify ffmpeg support)')

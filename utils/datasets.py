@@ -127,9 +127,9 @@ class LoadImages:  # for inference
 
 
 class LoadRosTopic:  # for inference
-    def __init__(self, path, img_size=416, half=False):
+    def __init__(self, path, img_size=416, half=False, rostopic="/"):
         self.path = str(Path(path))
-
+        self.rostopic = str(rostopic)
         self.img_size = img_size
         self.mode = 'images'
         self.half = half  # half precision fp16 images
@@ -143,6 +143,7 @@ class LoadRosTopic:  # for inference
         """ cv_bridge does not support python3 and this is extracted from the
             cv_bridge file to convert the msg::Img to np.ndarray
         """
+        # print("encoding=====", img_msg.encoding)
         #set different dtype based on different encoding type
         if 'C' in img_msg.encoding:
             map_dtype = {'U': 'uint', 'S': 'int', 'F': 'float'}
@@ -151,6 +152,9 @@ class LoadRosTopic:  # for inference
             dtype = np.dtype(map_dtype[dtype_str[-1]] + dtype_str[:-1])
         elif img_msg.encoding == 'bgr8' or img_msg.encoding == 'rgb8':
             n_channels = 3
+            dtype = np.dtype('uint8')
+        elif img_msg.encoding == 'mono8':
+            n_channels = 1
             dtype = np.dtype('uint8')
 
             
@@ -164,6 +168,8 @@ class LoadRosTopic:  # for inference
         #convert RGB to BGR
         if img_msg.encoding == 'rgb8':
             self.img0 = cv2.cvtColor(img1, cv2.COLOR_RGB2BGR)
+        elif img_msg.encoding == 'mono8':
+            self.img0 = cv2.cvtColor(img1, cv2.COLOR_GRAY2BGR)
         else:
             self.img0 = img1
         return self.img0       
@@ -175,7 +181,7 @@ class LoadRosTopic:  # for inference
             raise StopIteration
 
         
-        rospy.Subscriber("/AeroCameraDown/color/image_raw", Image, self.cv_bridge)  # BGR
+        rospy.Subscriber(self.rostopic, Image, self.cv_bridge)  # BGR
 
         if self.rcount <= 1:
             from time import sleep 
