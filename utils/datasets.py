@@ -127,22 +127,42 @@ class LoadImages:  # for inference
 
 
 class LoadRosTopic:  # for inference
-    def __init__(self, path, img_size=416, half=False, rostopic="/"):
+    def __init__(self, path, img_size=416, half=False, rostopic_color="/", rostopic_depth="/"):
         self.path = str(Path(path))
-        self.rostopic = str(rostopic)
+        self.rostopic_color = str(rostopic_color)
+        self.rostopic_depth = str(rostopic_depth)
         self.img_size = img_size
         self.mode = 'images'
         self.half = half  # half precision fp16 images
         self.rcount = 0 #if this is the first time calling this class, then wait for 2secs for each call to let the rostopic in
+        self.depth_msg = 1
+        self.color_msg = 1
+
+        rospy.Subscriber(self.rostopic_color, Image, self.cv_bridge)  # BGR
+        rospy.Subscriber(self.rostopic_depth, Image, self.depth_callback)   #Depth
+        
+
 
     def __iter__(self):
         self.count = -1
         return self
 
+
+    def depth_callback(self, ros_depth_msg):
+        self.depth_msg = ros_depth_msg
+    
+    def get_depth(self):
+        return self.depth_msg
+
+    def get_color(self):
+        return self.color_msg
+
+
     def cv_bridge(self, img_msg):
         """ cv_bridge does not support python3 and this is extracted from the
             cv_bridge file to convert the msg::Img to np.ndarray
         """
+        self.color_msg = img_msg
         # print("encoding=====", img_msg.encoding)
         #set different dtype based on different encoding type
         if 'C' in img_msg.encoding:
@@ -174,15 +194,14 @@ class LoadRosTopic:  # for inference
             self.img0 = img1
         return self.img0       
 
+
+
     def __next__(self):
         self.count += 1
         if cv2.waitKey(1) == ord('q'):  # q to quit
             cv2.destroyAllWindows()
             raise StopIteration
-
-        
-        rospy.Subscriber(self.rostopic, Image, self.cv_bridge)  # BGR
-
+    
         if self.rcount <= 1:
             from time import sleep 
             sleep(1)

@@ -7,11 +7,11 @@ from models import *  # set ONNX_EXPORT in models.py
 from utils.datasets import *
 from utils.utils import *
 import sys
-
+from yolov3_ros.msg import image_with_class
 
 def detect(save_txt=False, save_img=False):
     img_size = (320, 192) if ONNX_EXPORT else opt.img_size  # (320, 192) or (416, 256) or (608, 352) for (height, width)
-    out, source, rostopic, weights, half, view_img = opt.output, opt.source, opt.rostopic, opt.weights, opt.half, opt.view_img
+    out, source, rostopic_color, rostopic_depth, weights, half, view_img = opt.output, opt.source, opt.rostopic_color, opt.rostopic_depth, opt.weights, opt.half, opt.view_img
     webcam = source == '0' or source.startswith('rtsp') or source.startswith('http') or source.endswith('.txt')
     rosFlag = source == '1' or source.startswith('/')
 
@@ -70,17 +70,13 @@ def detect(save_txt=False, save_img=False):
     elif rosFlag:
         view_img = True
         torch.backends.cudnn.benchmark = True  # set True to speed up constant image size inference
-        dataset = LoadRosTopic(path=source, img_size=img_size, half=half, rostopic=rostopic)
+        dataset = LoadRosTopic(path=source, img_size=img_size, half=half, rostopic_color=rostopic_color, rostopic_depth=rostopic_depth)
     else:
         save_img = True
         dataset = LoadImages(path=source, img_size=img_size, half=half)
-
-    
-
     # Get classes and colors
     classes = load_classes(parse_data_cfg(opt.data)['names'])
     colors = [[random.randint(0, 255) for _ in range(3)] for _ in range(len(classes))]
-
     # Run inference
     t0 = time.time()
     for path, img, im0s, vid_cap in dataset:
@@ -102,6 +98,8 @@ def detect(save_txt=False, save_img=False):
         if classify:
             pred = apply_classifier(pred, modelc, img, im0s)
 
+
+        # an image_with_class variable
         # Process detections
         for i, det in enumerate(pred):  # detections per image
             if webcam:  # batch_size >= 1
@@ -115,6 +113,15 @@ def detect(save_txt=False, save_img=False):
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
 
+                # get color and depth topic
+                color_msg = dataset.get_color()
+                depth_msg = dataset.get_depth()
+
+                #to create a variable to publish
+                class_location = image_with_class()
+                class_location.ColorImage = color_msg
+                class_location.DepthImage = depth_msg
+                
                 # Print results
                 for c in det[:, -1].unique():
                     n = (det[:, -1] == c).sum()  # detections per class
@@ -130,8 +137,23 @@ def detect(save_txt=False, save_img=False):
                         label = '%s %.2f' % (classes[int(cls)], conf)
                         plot_one_box(xyxy, im0, label=label, color=colors[int(cls)])
 
+                    # label.split(None,1)[0] is the class name
+                    # label.split(None,1)[1] is the trusting confident
+                    # int(xyxy[0]) is the x_position_of_the_box_DownLeft_corner
+                    # int(xyxy[1]) is the y_position_of_the_box_DownLeft_corner
+                    # int(xyxy[2]) is the x_position_of_the_box_UpRight_corner
+                    # int(xyxy[3]) is the y_position_of_the_box_UpRight_corner
+                    class_location.class_name_of_the_box.append(label.split(None,1)[0])
+                    class_location.x_position_of_the_box_DownLeft_corner.append(str(int(xyxy[0]))+" ")
+                    class_location.y_position_of_the_box_DownLeft_corner.append(str(int(xyxy[1]))+" ")
+                    class_location.x_position_of_the_box_UpRight_corner.append(str(int(xyxy[2]))+" ")
+                    class_location.y_position_of_the_box_UpRight_corner.append(str(int(xyxy[3]))+" ")
             print('%sDone. (%.3fs)' % (s, time.time() - t))
 
+            # publish class_and_image
+            if det is not None and len(det):
+                class_image.publish(class_location)
+            
             # Stream results
             if view_img:
                 cv2.imshow(p, im0)
@@ -161,36 +183,16 @@ def detect(save_txt=False, save_img=False):
 
 
 
-def image_msg_to_cv2(img_msg):
-    """ cv_bridge does not support python3 and this is extracted from the
-        cv_bridge file to convert the msg::Img to np.ndarray
-    """
-    if 'C' in img_msg.encoding:
-        map_dtype = {'U': 'uint', 'S': 'int', 'F': 'float'}
-        dtype_str, n_channels_str = img_msg.encoding.split('C')
-        n_channels = int(n_channels_str)
-        dtype = np.dtype(map_dtype[dtype_str[-1]] + dtype_str[:-1])
-    elif img_msg.encoding == 'bgr8':
-        n_channels = 3
-        dtype = np.dtype('uint8')
-    dtype = dtype.newbyteorder('>' if img_msg.is_bigendian else '<')
-    im = np.ndarray(shape=(img_msg.height, img_msg.width, n_channels),
-                    dtype=dtype, buffer=img_msg.data)
-    im = np.squeeze(im)
-    if img_msg.is_bigendian == (sys.byteorder == 'little'):
-        im = im.byteswap().newbyteorder()
-    return im
-
-
 
 if __name__ == '__main__':
     rospy.init_node('Detecter', anonymous=True)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='cfg/yolov3_80.cfg', help='cfg file path')
-    parser.add_argument('--data', type=str, default='data/coco80.data', help='coco.data file path')
-    parser.add_argument('--weights', type=str, default='weights/infraFront/1204best.pt', help='path to weights file')
-    parser.add_argument('--source', type=str, default='1', help='source')  # input file/folder, 0 for webcam, 1 for rostopic
-    parser.add_argument('--rostopic', type=str, default='/AeroCameraFront/infra1/image_rect_raw', help='source')
+    parser.add_argument('--cfg', type=str, default='cfg/yolov3.cfg', help='cfg file path')
+    parser.add_argument('--data', type=str, default='data/coco.data', help='coco.data file path')
+    parser.add_argument('--weights', type=str, default='weights/colorDown/1209best.pt', help='path to weights file')
+    parser.add_argument('--source', type=str, default='1', help='source')  # input file/folder, 0 for webcam, 1 for ros
+    parser.add_argument('--rostopic_color', type=str, default='/AeroCameraDown/infra2/image_rect_raw', help='source') # set subscribe topic if the source value =1
+    parser.add_argument('--rostopic_depth', type=str, default='/AeroCameraDown/depth/image_rect_raw', help='source') # set subscribe topic if the source value =1
     parser.add_argument('--output', type=str, default='output/try', help='output folder')  # output folder
     parser.add_argument('--img-size', type=int, default=1280, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.6, help='object confidence threshold')
@@ -201,6 +203,13 @@ if __name__ == '__main__':
     parser.add_argument('--view-img', action='store_true', help='display results')
     opt = parser.parse_args()
     print(opt)
+
+    # global color_pub
+    # global depth_pub
+    global class_image
+    # color_pub = rospy.Publisher("colorYOLO", Image, queue_size=1)
+    # depth_pub = rospy.Publisher("depthYOLO", Image, queue_size=1)
+    class_image = rospy.Publisher("class_image_YOLO", image_with_class, queue_size=1)
 
     with torch.no_grad():
         detect()

@@ -5,8 +5,10 @@ import os
 import random
 import shutil
 from pathlib import Path
-
+import sys
+sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
 import cv2
+sys.path.append('/opt/ros/kinetic/lib/python2.7/dist-packages')
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
